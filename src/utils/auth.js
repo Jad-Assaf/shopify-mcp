@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { getProtectedResourceMetadataUrl, verifyOAuthAccessToken } from '../oauth.js';
 import { AppError } from './errors.js';
 
 function parseAllowedOrigins() {
@@ -32,16 +33,28 @@ export function requireAuth(req, _res, next) {
     const header = req.get('authorization') ?? '';
     const [scheme, token] = header.split(' ');
 
-    if (scheme !== 'Bearer' || !token || !timingSafeEqualText(token, configuredKey)) {
+    if (scheme !== 'Bearer' || !token) {
       throw new AppError('Unauthorized MCP request.', {
         statusCode: 401,
         code: 'UNAUTHORIZED'
       });
     }
 
+    if (timingSafeEqualText(token, configuredKey)) {
+      validateOrigin(req);
+      next();
+      return;
+    }
+
+    verifyOAuthAccessToken(token, req);
     validateOrigin(req);
     next();
   } catch (error) {
+    if (error instanceof AppError && error.statusCode === 401) {
+      error.details = {
+        wwwAuthenticate: `Bearer resource_metadata="${getProtectedResourceMetadataUrl(req)}", scope="shopify.read shopify.write"`
+      };
+    }
     next(error);
   }
 }

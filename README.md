@@ -4,7 +4,8 @@ Production-ready Shopify Admin MCP server for Google Cloud Run. It exposes an au
 
 ## Security model
 
-- Every `/mcp` request must include `Authorization: Bearer <MCP_API_KEY>`.
+- Every `/mcp` request must include `Authorization: Bearer <MCP_API_KEY>` or a valid OAuth access token issued by this server.
+- OAuth 2.1 authorization-code + PKCE endpoints are included for ChatGPT Apps developer mode.
 - `Origin` is validated when present. Set `MCP_ALLOWED_ORIGINS` to a comma-separated list for browser clients.
 - Shopify credentials are read only from environment variables and are never logged.
 - Write tools never write by default. They return a JSON preview unless `confirm=true`.
@@ -48,12 +49,17 @@ ALLOW_WRITE_TOOLS=false
 Optional values:
 
 ```bash
+PUBLIC_BASE_URL=https://your-cloud-run-service-url
+OAUTH_AUTHORIZATION_PASSWORD=owner-login-password-for-chatgpt-linking
+OAUTH_TOKEN_SECRET=random-oauth-signing-secret
 MCP_ALLOWED_ORIGINS=https://your-client.example.com
 SHOPIFY_REQUEST_TIMEOUT_MS=20000
 SHOPIFY_MAX_RETRIES=2
 ```
 
 Keep `ALLOW_WRITE_TOOLS=false` unless you intentionally want this MCP server to edit Shopify data.
+
+`PUBLIC_BASE_URL` is recommended in Cloud Run so OAuth discovery metadata uses the exact public service URL. `OAUTH_AUTHORIZATION_PASSWORD` is the password you enter in the browser when ChatGPT links the app. `OAUTH_TOKEN_SECRET` signs short-lived OAuth access tokens.
 
 ## Run locally
 
@@ -123,6 +129,8 @@ Create Secret Manager secrets:
 ```bash
 printf "replace-with-shopify-admin-api-token" | gcloud secrets create shopify-admin-token --data-file=-
 printf "some-secret-key" | gcloud secrets create mcp-api-key --data-file=-
+printf "owner-login-password" | gcloud secrets create oauth-authorization-password --data-file=-
+openssl rand -base64 32 | gcloud secrets create oauth-token-secret --data-file=-
 ```
 
 Deploy to Cloud Run:
@@ -132,11 +140,44 @@ gcloud run deploy shopify-mcp-cloud-run \
   --source . \
   --region me-west1 \
   --allow-unauthenticated \
-  --set-env-vars SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com,SHOPIFY_API_VERSION=2026-04,ALLOW_WRITE_TOOLS=false \
-  --set-secrets SHOPIFY_ADMIN_ACCESS_TOKEN=shopify-admin-token:latest,MCP_API_KEY=mcp-api-key:latest
+  --set-env-vars SHOPIFY_SHOP_DOMAIN=your-store.myshopify.com,SHOPIFY_API_VERSION=2026-04,ALLOW_WRITE_TOOLS=false,MCP_ALLOWED_ORIGINS=https://chatgpt.com \
+  --set-secrets SHOPIFY_ADMIN_ACCESS_TOKEN=shopify-admin-token:latest,MCP_API_KEY=mcp-api-key:latest,OAUTH_AUTHORIZATION_PASSWORD=oauth-authorization-password:latest,OAUTH_TOKEN_SECRET=oauth-token-secret:latest
 ```
 
 Cloud Run is marked `--allow-unauthenticated` so MCP clients can reach the service, but the `/mcp` endpoint still requires the bearer token.
+
+After the first deploy, get the public service URL:
+
+```bash
+SERVICE_URL=$(gcloud run services describe shopify-mcp-cloud-run \
+  --region me-west1 \
+  --format='value(status.url)')
+```
+
+Then set it as `PUBLIC_BASE_URL` so OAuth metadata is stable:
+
+```bash
+gcloud run services update shopify-mcp-cloud-run \
+  --region me-west1 \
+  --update-env-vars PUBLIC_BASE_URL="$SERVICE_URL"
+```
+
+## Connect to ChatGPT
+
+1. In ChatGPT web, open **Settings > Apps > Advanced settings**.
+2. Enable **Developer mode**.
+3. Click **Create app**.
+4. Use the MCP server URL: `https://your-cloud-run-service-url/mcp`.
+5. Choose OAuth authentication if prompted.
+6. When the authorization page opens, enter `OAUTH_AUTHORIZATION_PASSWORD`.
+
+The server exposes OAuth discovery at:
+
+- `/.well-known/oauth-protected-resource`
+- `/.well-known/oauth-authorization-server`
+- `/oauth/register`
+- `/oauth/authorize`
+- `/oauth/token`
 
 ## MCP tools
 

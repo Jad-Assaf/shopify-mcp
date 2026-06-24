@@ -182,6 +182,7 @@ The server exposes OAuth discovery at:
 ## MCP tools
 
 - `health_check`
+- `shopify_admin_graphql`
 - `search_products`
 - `get_product`
 - `update_product_seo`
@@ -189,6 +190,13 @@ The server exposes OAuth discovery at:
 - `update_product_tags`
 - `update_product_status`
 - `create_product`
+- `add_product_media`
+- `update_product_media`
+- `delete_product_media`
+- `reorder_product_media`
+- `replace_product_media`
+- `append_variant_media`
+- `detach_variant_media`
 - `update_product_metafields`
 - `get_orders`
 - `get_inventory_by_sku`

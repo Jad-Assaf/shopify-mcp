@@ -22,6 +22,22 @@ const ProductMediaInputSchema = z.object({
   mediaContentType: z.enum(['IMAGE', 'VIDEO', 'EXTERNAL_VIDEO', 'MODEL_3D'])
 });
 
+const ProductMediaUpdateInputSchema = z.object({
+  id: z.string().min(1),
+  alt: z.string().optional(),
+  previewImageSource: z.string().url().optional()
+});
+
+const ProductMediaMoveInputSchema = z.object({
+  id: z.string().min(1),
+  newPosition: z.number().int().min(0)
+});
+
+const ProductVariantMediaInputSchema = z.object({
+  variantId: z.string().min(1),
+  mediaIds: z.array(z.string().min(1)).min(1)
+});
+
 function requireWriteAllowed(confirm) {
   if (!confirm) {
     return false;
@@ -63,6 +79,24 @@ function productFields() {
   `;
 }
 
+function mediaFields() {
+  return `#graphql
+    id
+    alt
+    mediaContentType
+    status
+    preview {
+      status
+      image {
+        url
+        altText
+        width
+        height
+      }
+    }
+  `;
+}
+
 function fullProductFields() {
   return `#graphql
     id
@@ -98,6 +132,11 @@ function fullProductFields() {
         altText
         width
         height
+      }
+    }
+    media(first: 50) {
+      nodes {
+        ${mediaFields()}
       }
     }
     metafields(first: 50) {
@@ -452,6 +491,371 @@ export function registerProductTools(server, shopifyGraphQL, toolResponse) {
       );
 
       return toolResponse({ created: true, product: data.productCreate.product });
+    }
+  );
+
+  server.registerTool(
+    'add_product_media',
+    {
+      title: 'Add product media',
+      description: 'Preview or add images, videos, external videos, or 3D models to an existing product.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        media: z.array(ProductMediaInputSchema).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, media, confirm = false }) => {
+      const variables = { productId, media };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'add_product_media', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation AddProductMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+          productCreateMedia(productId: $productId, media: $media) {
+            media {
+              ${mediaFields()}
+            }
+            mediaUserErrors {
+              field
+              message
+              code
+            }
+            product {
+              id
+              title
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({
+        added: true,
+        media: data.productCreateMedia.media,
+        mediaUserErrors: data.productCreateMedia.mediaUserErrors,
+        product: data.productCreateMedia.product
+      });
+    }
+  );
+
+  server.registerTool(
+    'update_product_media',
+    {
+      title: 'Update product media',
+      description: 'Preview or update existing product media alt text or preview image source.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        media: z.array(ProductMediaUpdateInputSchema).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, media, confirm = false }) => {
+      const variables = { productId, media };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'update_product_media', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation UpdateProductMedia($productId: ID!, $media: [UpdateMediaInput!]!) {
+          productUpdateMedia(productId: $productId, media: $media) {
+            media {
+              ${mediaFields()}
+            }
+            mediaUserErrors {
+              field
+              message
+              code
+            }
+            product {
+              id
+              title
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({
+        updated: true,
+        media: data.productUpdateMedia.media,
+        mediaUserErrors: data.productUpdateMedia.mediaUserErrors,
+        product: data.productUpdateMedia.product
+      });
+    }
+  );
+
+  server.registerTool(
+    'delete_product_media',
+    {
+      title: 'Delete product media',
+      description: 'Preview or permanently delete media from an existing product.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        mediaIds: z.array(z.string().min(1)).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, mediaIds, confirm = false }) => {
+      const variables = { productId, mediaIds };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'delete_product_media', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation DeleteProductMedia($productId: ID!, $mediaIds: [ID!]!) {
+          productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+            deletedMediaIds
+            deletedProductImageIds
+            mediaUserErrors {
+              field
+              message
+              code
+            }
+            product {
+              id
+              title
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({
+        deleted: true,
+        deletedMediaIds: data.productDeleteMedia.deletedMediaIds,
+        deletedProductImageIds: data.productDeleteMedia.deletedProductImageIds,
+        mediaUserErrors: data.productDeleteMedia.mediaUserErrors,
+        product: data.productDeleteMedia.product
+      });
+    }
+  );
+
+  server.registerTool(
+    'reorder_product_media',
+    {
+      title: 'Reorder product media',
+      description: 'Preview or reorder product media by moving media IDs to zero-based positions.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        moves: z.array(ProductMediaMoveInputSchema).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, moves, confirm = false }) => {
+      const variables = {
+        productId,
+        moves: moves.map((move) => ({ ...move, newPosition: String(move.newPosition) }))
+      };
+
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'reorder_product_media', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation ReorderProductMedia($productId: ID!, $moves: [MoveInput!]!) {
+          productReorderMedia(id: $productId, moves: $moves) {
+            job {
+              id
+              done
+            }
+            mediaUserErrors {
+              field
+              message
+              code
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({
+        reordered: true,
+        job: data.productReorderMedia.job,
+        mediaUserErrors: data.productReorderMedia.mediaUserErrors
+      });
+    }
+  );
+
+  server.registerTool(
+    'replace_product_media',
+    {
+      title: 'Replace product media',
+      description: 'Preview or delete selected product media and add replacement media in one confirmed operation.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        deleteMediaIds: z.array(z.string().min(1)).min(1),
+        addMedia: z.array(ProductMediaInputSchema).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, deleteMediaIds, addMedia, confirm = false }) => {
+      const variables = { productId, deleteMediaIds, addMedia };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'replace_product_media', ...variables });
+      }
+
+      const deleteData = await shopifyGraphQL(
+        `#graphql
+        mutation DeleteProductMedia($productId: ID!, $mediaIds: [ID!]!) {
+          productDeleteMedia(productId: $productId, mediaIds: $mediaIds) {
+            deletedMediaIds
+            deletedProductImageIds
+            mediaUserErrors {
+              field
+              message
+              code
+            }
+            product {
+              id
+              title
+            }
+          }
+        }`,
+        { productId, mediaIds: deleteMediaIds }
+      );
+
+      if (deleteData.productDeleteMedia.mediaUserErrors.length > 0) {
+        return toolResponse({
+          replaced: false,
+          step: 'delete_product_media',
+          deletedMediaIds: deleteData.productDeleteMedia.deletedMediaIds,
+          deletedProductImageIds: deleteData.productDeleteMedia.deletedProductImageIds,
+          mediaUserErrors: deleteData.productDeleteMedia.mediaUserErrors,
+          product: deleteData.productDeleteMedia.product
+        });
+      }
+
+      const addData = await shopifyGraphQL(
+        `#graphql
+        mutation AddProductMedia($productId: ID!, $media: [CreateMediaInput!]!) {
+          productCreateMedia(productId: $productId, media: $media) {
+            media {
+              ${mediaFields()}
+            }
+            mediaUserErrors {
+              field
+              message
+              code
+            }
+            product {
+              id
+              title
+            }
+          }
+        }`,
+        { productId, media: addMedia }
+      );
+
+      return toolResponse({
+        replaced: addData.productCreateMedia.mediaUserErrors.length === 0,
+        deletedMediaIds: deleteData.productDeleteMedia.deletedMediaIds,
+        deletedProductImageIds: deleteData.productDeleteMedia.deletedProductImageIds,
+        addedMedia: addData.productCreateMedia.media,
+        mediaUserErrors: addData.productCreateMedia.mediaUserErrors,
+        product: addData.productCreateMedia.product
+      });
+    }
+  );
+
+  server.registerTool(
+    'append_variant_media',
+    {
+      title: 'Append variant media',
+      description: 'Preview or attach existing product media to product variants.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        variantMedia: z.array(ProductVariantMediaInputSchema).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, variantMedia, confirm = false }) => {
+      const variables = { productId, variantMedia };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'append_variant_media', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation AppendVariantMedia($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+          productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+            product {
+              id
+              title
+            }
+            productVariants {
+              id
+              title
+              sku
+            }
+            userErrors {
+              field
+              message
+              code
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({
+        appended: true,
+        product: data.productVariantAppendMedia.product,
+        productVariants: data.productVariantAppendMedia.productVariants
+      });
+    }
+  );
+
+  server.registerTool(
+    'detach_variant_media',
+    {
+      title: 'Detach variant media',
+      description: 'Preview or detach existing product media from product variants.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        variantMedia: z.array(ProductVariantMediaInputSchema).min(1),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, variantMedia, confirm = false }) => {
+      const variables = { productId, variantMedia };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'detach_variant_media', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation DetachVariantMedia($productId: ID!, $variantMedia: [ProductVariantDetachMediaInput!]!) {
+          productVariantDetachMedia(productId: $productId, variantMedia: $variantMedia) {
+            product {
+              id
+              title
+            }
+            productVariants {
+              id
+              title
+              sku
+            }
+            userErrors {
+              field
+              message
+              code
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({
+        detached: true,
+        product: data.productVariantDetachMedia.product,
+        productVariants: data.productVariantDetachMedia.productVariants
+      });
     }
   );
 

@@ -187,6 +187,8 @@ The server exposes OAuth discovery at:
 - `update_product_seo`
 - `update_product_description`
 - `update_product_tags`
+- `update_product_status`
+- `create_product`
 - `update_product_metafields`
 - `get_orders`
 - `get_inventory_by_sku`

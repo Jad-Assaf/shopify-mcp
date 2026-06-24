@@ -2,6 +2,25 @@ import * as z from 'zod/v4';
 import { AppError } from '../utils/errors.js';
 
 const ProductIdSchema = z.string().min(1);
+const ProductStatusSchema = z.enum(['ACTIVE', 'ARCHIVED', 'DRAFT']);
+
+const MetafieldInputSchema = z.object({
+  namespace: z.string().min(1),
+  key: z.string().min(1),
+  type: z.string().min(1),
+  value: z.string()
+});
+
+const ProductOptionInputSchema = z.object({
+  name: z.string().min(1),
+  values: z.array(z.string().min(1)).min(1)
+});
+
+const ProductMediaInputSchema = z.object({
+  originalSource: z.string().url(),
+  alt: z.string().optional(),
+  mediaContentType: z.enum(['IMAGE', 'VIDEO', 'EXTERNAL_VIDEO', 'MODEL_3D'])
+});
 
 function requireWriteAllowed(confirm) {
   if (!confirm) {
@@ -267,6 +286,172 @@ export function registerProductTools(server, shopifyGraphQL, toolResponse) {
       );
 
       return toolResponse({ updated: true, product: data.productUpdate.product });
+    }
+  );
+
+  server.registerTool(
+    'update_product_status',
+    {
+      title: 'Update product status',
+      description: 'Preview or update product status. Status must be ACTIVE, DRAFT, or ARCHIVED.',
+      inputSchema: {
+        productId: ProductIdSchema,
+        status: ProductStatusSchema,
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({ productId, status, confirm = false }) => {
+      const product = { id: productId, status };
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'update_product_status', product });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation UpdateProductStatus($product: ProductUpdateInput!) {
+          productUpdate(product: $product) {
+            product {
+              id
+              title
+              status
+              handle
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }`,
+        { product }
+      );
+
+      return toolResponse({ updated: true, product: data.productUpdate.product });
+    }
+  );
+
+  server.registerTool(
+    'create_product',
+    {
+      title: 'Create product',
+      description: 'Preview or create a Shopify product with optional status, tags, SEO, metafields, options, collections, and media.',
+      inputSchema: {
+        title: z.string().min(1),
+        descriptionHtml: z.string().optional(),
+        vendor: z.string().optional(),
+        productType: z.string().optional(),
+        status: ProductStatusSchema.optional(),
+        handle: z.string().optional(),
+        tags: z.array(z.string().min(1)).optional(),
+        seoTitle: z.string().optional(),
+        seoDescription: z.string().optional(),
+        metafields: z.array(MetafieldInputSchema).optional(),
+        collectionsToJoin: z.array(z.string().min(1)).optional(),
+        productOptions: z.array(ProductOptionInputSchema).max(3).optional(),
+        media: z.array(ProductMediaInputSchema).optional(),
+        confirm: z.boolean().optional().default(false)
+      }
+    },
+    async ({
+      title,
+      descriptionHtml,
+      vendor,
+      productType,
+      status,
+      handle,
+      tags,
+      seoTitle,
+      seoDescription,
+      metafields,
+      collectionsToJoin,
+      productOptions,
+      media,
+      confirm = false
+    }) => {
+      const product = {
+        title,
+        ...(descriptionHtml ? { descriptionHtml } : {}),
+        ...(vendor ? { vendor } : {}),
+        ...(productType ? { productType } : {}),
+        ...(status ? { status } : {}),
+        ...(handle ? { handle } : {}),
+        ...(tags ? { tags } : {}),
+        ...(metafields ? { metafields } : {}),
+        ...(collectionsToJoin ? { collectionsToJoin } : {}),
+        ...(productOptions
+          ? {
+              productOptions: productOptions.map((option) => ({
+                name: option.name,
+                values: option.values.map((name) => ({ name }))
+              }))
+            }
+          : {}),
+        ...(seoTitle || seoDescription
+          ? {
+              seo: {
+                ...(seoTitle ? { title: seoTitle } : {}),
+                ...(seoDescription ? { description: seoDescription } : {})
+              }
+            }
+          : {})
+      };
+
+      const variables = {
+        product,
+        media: media ?? []
+      };
+
+      if (!requireWriteAllowed(confirm)) {
+        return toolResponse({ preview: true, action: 'create_product', ...variables });
+      }
+
+      const data = await shopifyGraphQL(
+        `#graphql
+        mutation CreateProduct($product: ProductCreateInput!, $media: [CreateMediaInput!]) {
+          productCreate(product: $product, media: $media) {
+            product {
+              id
+              title
+              handle
+              status
+              vendor
+              productType
+              tags
+              seo {
+                title
+                description
+              }
+              variants(first: 10) {
+                nodes {
+                  id
+                  title
+                  sku
+                  price
+                  inventoryItem {
+                    id
+                    tracked
+                  }
+                }
+              }
+              media(first: 10) {
+                nodes {
+                  alt
+                  mediaContentType
+                  preview {
+                    status
+                  }
+                }
+              }
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }`,
+        variables
+      );
+
+      return toolResponse({ created: true, product: data.productCreate.product });
     }
   );
 

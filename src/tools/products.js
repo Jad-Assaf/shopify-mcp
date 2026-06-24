@@ -38,6 +38,8 @@ const ProductVariantMediaInputSchema = z.object({
   mediaIds: z.array(z.string().min(1)).min(1)
 });
 
+const SHOPIFY_PAGE_SIZE = 250;
+
 function requireWriteAllowed(confirm) {
   if (!confirm) {
     return false;
@@ -53,8 +55,20 @@ function requireWriteAllowed(confirm) {
   return true;
 }
 
-function normalizeFirst(first, max = 50) {
-  return Math.min(Math.max(Number(first ?? 10), 1), max);
+function requestedCount(first) {
+  if (first == null) {
+    return null;
+  }
+
+  return Math.max(Number(first), 1);
+}
+
+function pageSizeFor(remaining) {
+  if (remaining == null) {
+    return SHOPIFY_PAGE_SIZE;
+  }
+
+  return Math.min(remaining, SHOPIFY_PAGE_SIZE);
 }
 
 function productFields() {
@@ -159,23 +173,44 @@ export function registerProductTools(server, shopifyGraphQL, toolResponse) {
       description: 'Search Shopify products by title, SKU, handle, vendor, product type, or tag.',
       inputSchema: {
         query: z.string().min(1),
-        first: z.number().int().min(1).max(50).optional()
+        first: z.number().int().min(1).optional()
       }
     },
     async ({ query, first }) => {
-      const data = await shopifyGraphQL(
-        `#graphql
-        query SearchProducts($query: String!, $first: Int!) {
-          products(first: $first, query: $query) {
-            nodes {
-              ${productFields()}
-            }
-          }
-        }`,
-        { query, first: normalizeFirst(first) }
-      );
+      const limit = requestedCount(first);
+      const products = [];
+      let after = null;
+      let hasNextPage = false;
 
-      return toolResponse({ products: data.products.nodes });
+      do {
+        const remaining = limit == null ? null : limit - products.length;
+        const pageSize = pageSizeFor(remaining);
+        const data = await shopifyGraphQL(
+          `#graphql
+          query SearchProducts($query: String!, $first: Int!, $after: String) {
+            products(first: $first, after: $after, query: $query) {
+              nodes {
+                ${productFields()}
+              }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
+            }
+          }`,
+          { query, first: pageSize, after }
+        );
+
+        products.push(...data.products.nodes);
+        hasNextPage = data.products.pageInfo.hasNextPage;
+        after = data.products.pageInfo.endCursor;
+      } while (hasNextPage && (limit == null || products.length < limit));
+
+      return toolResponse({
+        products,
+        count: products.length,
+        hasMore: hasNextPage
+      });
     }
   );
 

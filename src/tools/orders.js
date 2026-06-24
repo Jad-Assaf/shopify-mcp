@@ -1,7 +1,21 @@
 import * as z from 'zod/v4';
 
-function normalizeFirst(first, max = 50) {
-  return Math.min(Math.max(Number(first ?? 10), 1), max);
+const SHOPIFY_PAGE_SIZE = 250;
+
+function requestedCount(first) {
+  if (first == null) {
+    return null;
+  }
+
+  return Math.max(Number(first), 1);
+}
+
+function pageSizeFor(remaining) {
+  if (remaining == null) {
+    return SHOPIFY_PAGE_SIZE;
+  }
+
+  return Math.min(remaining, SHOPIFY_PAGE_SIZE);
 }
 
 function customerVisitFields() {
@@ -32,73 +46,94 @@ export function registerOrderTools(server, shopifyGraphQL, toolResponse) {
       description: 'Fetch recent Shopify orders with customer, notes, attribution, and line item details.',
       inputSchema: {
         query: z.string().optional(),
-        first: z.number().int().min(1).max(50).optional()
+        first: z.number().int().min(1).optional()
       }
     },
     async ({ query, first }) => {
-      const data = await shopifyGraphQL(
-        `#graphql
-        query GetOrders($query: String, $first: Int!) {
-          orders(first: $first, query: $query, sortKey: CREATED_AT, reverse: true) {
-            nodes {
-              id
-              name
-              createdAt
-              note
-              displayFinancialStatus
-              displayFulfillmentStatus
-              customAttributes {
-                key
-                value
-              }
-              app {
+      const limit = requestedCount(first);
+      const orders = [];
+      let after = null;
+      let hasNextPage = false;
+
+      do {
+        const remaining = limit == null ? null : limit - orders.length;
+        const pageSize = pageSizeFor(remaining);
+        const data = await shopifyGraphQL(
+          `#graphql
+          query GetOrders($query: String, $first: Int!, $after: String) {
+            orders(first: $first, after: $after, query: $query, sortKey: CREATED_AT, reverse: true) {
+              nodes {
                 id
                 name
-              }
-              customerJourneySummary {
-                ready
-                customerOrderIndex
-                daysToConversion
-                firstVisit {
-                  ${customerVisitFields()}
+                createdAt
+                note
+                displayFinancialStatus
+                displayFulfillmentStatus
+                customAttributes {
+                  key
+                  value
                 }
-                lastVisit {
-                  ${customerVisitFields()}
-                }
-              }
-              totalPriceSet {
-                shopMoney {
-                  amount
-                  currencyCode
-                }
-              }
-              customer {
-                firstName
-                lastName
-                email
-              }
-              lineItems(first: 50) {
-                nodes {
+                app {
                   id
-                  title
-                  quantity
-                  sku
-                  variantTitle
-                  originalTotalSet {
-                    shopMoney {
-                      amount
-                      currencyCode
+                  name
+                }
+                customerJourneySummary {
+                  ready
+                  customerOrderIndex
+                  daysToConversion
+                  firstVisit {
+                    ${customerVisitFields()}
+                  }
+                  lastVisit {
+                    ${customerVisitFields()}
+                  }
+                }
+                totalPriceSet {
+                  shopMoney {
+                    amount
+                    currencyCode
+                  }
+                }
+                customer {
+                  firstName
+                  lastName
+                  email
+                }
+                lineItems(first: 50) {
+                  nodes {
+                    id
+                    title
+                    quantity
+                    sku
+                    variantTitle
+                    originalTotalSet {
+                      shopMoney {
+                        amount
+                        currencyCode
+                      }
                     }
                   }
                 }
               }
+              pageInfo {
+                hasNextPage
+                endCursor
+              }
             }
-          }
-        }`,
-        { query: query || null, first: normalizeFirst(first) }
-      );
+          }`,
+          { query: query || null, first: pageSize, after }
+        );
 
-      return toolResponse({ orders: data.orders.nodes });
+        orders.push(...data.orders.nodes);
+        hasNextPage = data.orders.pageInfo.hasNextPage;
+        after = data.orders.pageInfo.endCursor;
+      } while (hasNextPage && (limit == null || orders.length < limit));
+
+      return toolResponse({
+        orders,
+        count: orders.length,
+        hasMore: hasNextPage
+      });
     }
   );
 }

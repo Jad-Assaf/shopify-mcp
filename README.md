@@ -181,6 +181,8 @@ The server exposes OAuth discovery at:
 
 ## MCP tools
 
+For `search_products` and `get_orders`, omit `first` to fetch all matching Shopify pages. Pass `first` only when you want an explicit cap.
+
 - `health_check`
 - `shopify_admin_graphql`
 - `search_products`

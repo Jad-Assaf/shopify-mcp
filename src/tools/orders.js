@@ -4,12 +4,32 @@ function normalizeFirst(first, max = 50) {
   return Math.min(Math.max(Number(first ?? 10), 1), max);
 }
 
+function customerVisitFields() {
+  return `#graphql
+    id
+    occurredAt
+    source
+    sourceDescription
+    sourceType
+    landingPage
+    referrerUrl
+    referralCode
+    utmParameters {
+      campaign
+      content
+      medium
+      source
+      term
+    }
+  `;
+}
+
 export function registerOrderTools(server, shopifyGraphQL, toolResponse) {
   server.registerTool(
     'get_orders',
     {
       title: 'Get orders',
-      description: 'Fetch recent Shopify orders with customer and line item details.',
+      description: 'Fetch recent Shopify orders with customer, notes, attribution, and line item details.',
       inputSchema: {
         query: z.string().optional(),
         first: z.number().int().min(1).max(50).optional()
@@ -24,8 +44,28 @@ export function registerOrderTools(server, shopifyGraphQL, toolResponse) {
               id
               name
               createdAt
+              note
               displayFinancialStatus
               displayFulfillmentStatus
+              customAttributes {
+                key
+                value
+              }
+              app {
+                id
+                name
+              }
+              customerJourneySummary {
+                ready
+                customerOrderIndex
+                daysToConversion
+                firstVisit {
+                  ${customerVisitFields()}
+                }
+                lastVisit {
+                  ${customerVisitFields()}
+                }
+              }
               totalPriceSet {
                 shopMoney {
                   amount

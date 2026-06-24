@@ -2,22 +2,6 @@ import * as z from 'zod/v4';
 
 const SHOPIFY_PAGE_SIZE = 250;
 
-function requestedCount(first) {
-  if (first == null) {
-    return null;
-  }
-
-  return Math.max(Number(first), 1);
-}
-
-function pageSizeFor(remaining) {
-  if (remaining == null) {
-    return SHOPIFY_PAGE_SIZE;
-  }
-
-  return Math.min(remaining, SHOPIFY_PAGE_SIZE);
-}
-
 function customerVisitFields() {
   return `#graphql
     id
@@ -45,19 +29,15 @@ export function registerOrderTools(server, shopifyGraphQL, toolResponse) {
       title: 'Get orders',
       description: 'Fetch recent Shopify orders with customer, notes, attribution, and line item details.',
       inputSchema: {
-        query: z.string().optional(),
-        first: z.number().int().min(1).optional()
+        query: z.string().optional()
       }
     },
-    async ({ query, first }) => {
-      const limit = requestedCount(first);
+    async ({ query }) => {
       const orders = [];
       let after = null;
       let hasNextPage = false;
 
       do {
-        const remaining = limit == null ? null : limit - orders.length;
-        const pageSize = pageSizeFor(remaining);
         const data = await shopifyGraphQL(
           `#graphql
           query GetOrders($query: String, $first: Int!, $after: String) {
@@ -121,18 +101,18 @@ export function registerOrderTools(server, shopifyGraphQL, toolResponse) {
               }
             }
           }`,
-          { query: query || null, first: pageSize, after }
+          { query: query || null, first: SHOPIFY_PAGE_SIZE, after }
         );
 
         orders.push(...data.orders.nodes);
         hasNextPage = data.orders.pageInfo.hasNextPage;
         after = data.orders.pageInfo.endCursor;
-      } while (hasNextPage && (limit == null || orders.length < limit));
+      } while (hasNextPage);
 
       return toolResponse({
         orders,
         count: orders.length,
-        hasMore: hasNextPage
+        hasMore: false
       });
     }
   );

@@ -55,22 +55,6 @@ function requireWriteAllowed(confirm) {
   return true;
 }
 
-function requestedCount(first) {
-  if (first == null) {
-    return null;
-  }
-
-  return Math.max(Number(first), 1);
-}
-
-function pageSizeFor(remaining) {
-  if (remaining == null) {
-    return SHOPIFY_PAGE_SIZE;
-  }
-
-  return Math.min(remaining, SHOPIFY_PAGE_SIZE);
-}
-
 function productFields() {
   return `#graphql
     id
@@ -170,24 +154,20 @@ export function registerProductTools(server, shopifyGraphQL, toolResponse) {
     'search_products',
     {
       title: 'Search products',
-      description: 'Search Shopify products by title, SKU, handle, vendor, product type, or tag.',
+      description: 'List or search Shopify products by title, SKU, handle, vendor, product type, or tag.',
       inputSchema: {
-        query: z.string().min(1),
-        first: z.number().int().min(1).optional()
+        query: z.string().optional()
       }
     },
-    async ({ query, first }) => {
-      const limit = requestedCount(first);
+    async ({ query }) => {
       const products = [];
       let after = null;
       let hasNextPage = false;
 
       do {
-        const remaining = limit == null ? null : limit - products.length;
-        const pageSize = pageSizeFor(remaining);
         const data = await shopifyGraphQL(
           `#graphql
-          query SearchProducts($query: String!, $first: Int!, $after: String) {
+          query SearchProducts($query: String, $first: Int!, $after: String) {
             products(first: $first, after: $after, query: $query) {
               nodes {
                 ${productFields()}
@@ -198,18 +178,18 @@ export function registerProductTools(server, shopifyGraphQL, toolResponse) {
               }
             }
           }`,
-          { query, first: pageSize, after }
+          { query: query || null, first: SHOPIFY_PAGE_SIZE, after }
         );
 
         products.push(...data.products.nodes);
         hasNextPage = data.products.pageInfo.hasNextPage;
         after = data.products.pageInfo.endCursor;
-      } while (hasNextPage && (limit == null || products.length < limit));
+      } while (hasNextPage);
 
       return toolResponse({
         products,
         count: products.length,
-        hasMore: hasNextPage
+        hasMore: false
       });
     }
   );

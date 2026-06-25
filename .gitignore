@@ -5,3 +5,29 @@ node_modules/
 !.env.example
 npm-debug.log*
 .DS_Store
+
+# Local dependency/runtime environments
+.venv/
+venv/
+env/
+.local/
+
+# Tunnel client binaries, configs, and downloads
+tunnel-client
+tunnel-client*
+bin/tunnel-client
+bin/tunnel-client*
+downloads/
+tunnels/
+.tunnel-client/
+*.tar.gz
+*.tgz
+*.zip
+
+# Credentials and local secret material
+credentials/
+*.credentials.json
+*.secret.json
+*.pem
+*.key
+*.p12

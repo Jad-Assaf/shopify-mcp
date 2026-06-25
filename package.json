@@ -6,7 +6,9 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "install:local": "bash scripts/install-local-deps.sh",
+    "local:tunnel": "bash scripts/run-local-tunnel.sh"
   },
   "engines": {
     "node": ">=20"

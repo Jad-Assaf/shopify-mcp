@@ -9,6 +9,8 @@ import { getPublicShopifyConfig } from './shopifyClient.js';
 
 const app = express();
 const port = Number(process.env.PORT ?? 8080);
+const host = process.env.HOST ?? '0.0.0.0';
+const localNoAuthMode = process.env.MCP_LOCAL_NO_AUTH === 'true';
 
 app.set('trust proxy', true);
 app.use((req, res, next) => {
@@ -35,7 +37,9 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-registerOAuthRoutes(app);
+if (!localNoAuthMode) {
+  registerOAuthRoutes(app);
+}
 
 app.get('/health', (_req, res) => {
   const { shopDomain, apiVersion } = getPublicShopifyConfig();
@@ -83,6 +87,6 @@ app.use((error, _req, res, _next) => {
   }
 });
 
-app.listen(port, '0.0.0.0', () => {
-  console.log(`shopify-mcp-cloud-run listening on port ${port}`);
+app.listen(port, host, () => {
+  console.log(`shopify-mcp-cloud-run listening on http://${host}:${port}`);
 });

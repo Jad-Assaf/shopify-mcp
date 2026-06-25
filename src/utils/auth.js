@@ -20,8 +20,25 @@ function timingSafeEqualText(a, b) {
   return crypto.timingSafeEqual(aBuffer, bBuffer);
 }
 
+function isLoopbackAddress(address = '') {
+  return address === '127.0.0.1' || address === '::1' || address === '::ffff:127.0.0.1';
+}
+
 export function requireAuth(req, _res, next) {
   try {
+    if (process.env.MCP_LOCAL_NO_AUTH === 'true') {
+      if (!isLoopbackAddress(req.socket.remoteAddress)) {
+        throw new AppError('Local no-auth mode only accepts loopback requests.', {
+          statusCode: 403,
+          code: 'LOCAL_NO_AUTH_LOOPBACK_ONLY'
+        });
+      }
+
+      validateOrigin(req);
+      next();
+      return;
+    }
+
     const configuredKey = process.env.MCP_API_KEY;
     if (!configuredKey) {
       throw new AppError('MCP_API_KEY is not configured.', {

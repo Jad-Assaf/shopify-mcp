@@ -222,7 +222,7 @@ export function verifyOAuthAccessToken(token, req) {
   return payload;
 }
 
-export function registerOAuthRoutes(app) {
+export function registerProtectedResourceMetadataRoutes(app) {
   app.get('/.well-known/oauth-protected-resource', (req, res) => {
     res.json(getProtectedResourceMetadata(req));
   });
@@ -230,6 +230,10 @@ export function registerOAuthRoutes(app) {
   app.get('/.well-known/oauth-protected-resource/mcp', (req, res) => {
     res.json(getProtectedResourceMetadata(req));
   });
+}
+
+export function registerOAuthRoutes(app) {
+  registerProtectedResourceMetadataRoutes(app);
 
   app.get('/.well-known/oauth-authorization-server', (req, res) => {
     res.json(getAuthorizationServerMetadata(req));

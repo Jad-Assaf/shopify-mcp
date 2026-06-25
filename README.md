@@ -267,6 +267,8 @@ curl http://127.0.0.1:8080/health
 
 Make sure `./scripts/run-local-tunnel.sh` and `tunnel-client run --profile shopify-local` are both still running. If you recently changed tools, refresh the ChatGPT connector or recreate it so the tool schema is rediscovered.
 
+In local tunnel mode, full OAuth login routes are disabled, but the server still exposes OAuth protected-resource metadata so `tunnel-client doctor` can validate the MCP target. ChatGPT should still be configured with **No Authentication** for this local tunnel profile.
+
 **Missing env vars**
 
 `./scripts/run-local-tunnel.sh` checks:

@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './mcp.js';
-import { registerOAuthRoutes } from './oauth.js';
+import { registerOAuthRoutes, registerProtectedResourceMetadataRoutes } from './oauth.js';
 import { requireAuth } from './utils/auth.js';
 import { getErrorStatusCode, toErrorResponse } from './utils/errors.js';
 import { getPublicShopifyConfig } from './shopifyClient.js';
@@ -37,7 +37,9 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: false }));
 
-if (!localNoAuthMode) {
+if (localNoAuthMode) {
+  registerProtectedResourceMetadataRoutes(app);
+} else {
   registerOAuthRoutes(app);
 }
 
